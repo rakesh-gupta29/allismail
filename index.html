@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>AllIsMail</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: #F6F1E8;
+            color: #1F1F1F;
+        }
+
+        .top-banner {
+            background: #3B6FD8;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #F6F1E8;
+        }
+
+        .logo {
+            font-weight: 500;
+            font-style: italic;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .logo span {
+            color: #3B6FD8;
+        }
+
+        .hero {
+            text-align: center;
+            max-width: 900px;
+            margin: 90px auto 40px auto;
+            padding: 0 20px;
+        }
+
+        .hero h1 {
+            font-size: 3rem;
+            font-weight: 500;
+            line-height: 1.1;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #555;
+            display: block;
+            max-width: 32rem;
+            margin: 0 auto 40px;
+        }
+
+        .upload-box {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            max-width: 500px;
+            margin: 40px auto;
+        }
+
+        .upload-box>p {
+            color: #666;
+            margin-top: 0;
+        }
+
+        .file-input-wrapper {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .file-label {
+            display: inline-block;
+            padding: 14px 22px;
+            border-radius: 10px;
+            background: #EFE9DF;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .file-label:hover {
+            background: #e6dfd3;
+        }
+
+        input[type=file] {
+            display: none;
+        }
+
+        /* File details card */
+        .file-details {
+            display: none;
+            margin-top: 16px;
+            background: #F6F1E8;
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: left;
+            border: 1px solid #E5DFD5;
+            animation: fadeSlideIn 0.25s ease;
+        }
+
+        .file-details.visible {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+
+        .file-meta {
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 600;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #1F1F1F;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .file-remove {
+            margin-left: auto;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #aaa;
+            font-size: 18px;
+            padding: 4px;
+            line-height: 1;
+            flex-shrink: 0;
+            transition: color 0.15s;
+        }
+
+        .file-remove:hover {
+            color: #e55;
+        }
+
+        /* Submit button */
+        .upload-btn {
+            margin-top: 20px;
+            background: #3B6FD8;
+            color: white;
+            border: none;
+            padding: 12px 26px;
+            font-size: 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+
+        .upload-btn:hover:not(:disabled) {
+            background: #2f5ec0;
+        }
+
+        .upload-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            display: none;
+            flex-shrink: 0;
+        }
+
+        .upload-btn.loading .spinner {
+            display: block;
+        }
+
+        /* Results area */
+        .results {
+            display: none;
+            margin-top: 24px;
+            border-top: 1px solid #EEE8DF;
+            padding-top: 20px;
+            animation: fadeSlideIn 0.3s ease;
+        }
+
+        .results.visible {
+            display: block;
+        }
+
+        .results-title {
+            font-weight: 600;
+            font-size: 15px;
+            margin-bottom: 12px;
+            text-align: left;
+        }
+
+        .result-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #F0EBE3;
+            font-size: 13px;
+            gap: 10px;
+        }
+
+        .result-email {
+            color: #333;
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .badge-valid {
+            background: #E3F5EC;
+            color: #1A7A45;
+        }
+
+        .badge-invalid {
+            background: #FCE8E8;
+            color: #B92E2E;
+        }
+
+        .badge-risky {
+            background: #FFF4E3;
+            color: #A0620A;
+        }
+
+        /* Error message */
+        .error-msg {
+            display: none;
+            background: #FCE8E8;
+            color: #B92E2E;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 13px;
+            margin-top: 16px;
+            text-align: left;
+        }
+
+        .error-msg.visible {
+            display: block;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes fadeSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .features {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 50px;
+            color: #666;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+
+        .feature {
+            background: #EFE9DF;
+            padding: 10px 16px;
+            border-radius: 20px;
+        }
+
+        .footer {
+            text-align: center;
+            margin: 80px 0 40px 0;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header></header>
+
+    <section class="hero">
+
+        <div class="logo">
+            📬 <span>AllIsMail</span>
+        </div>
+
+        <h1>
+            Clean your email list<br>
+            before you send
+        </h1>
+
+        <p>
+            Upload a CSV file and AllIsMail will validate every email using syntax, MX and SMTP checks.
+        </p>
+
+        <div class="upload-box">
+
+            <p>Upload your CSV file</p>
+
+            <div class="file-input-wrapper">
+                <label class="file-label" for="fileInput">
+                    📁 Choose CSV File
+                </label>
+                <input id="fileInput" type="file" name="file" accept=".csv">
+            </div>
+
+            <!-- File details card -->
+            <div class="file-details" id="fileDetails">
+                <div class="file-icon">📄</div>
+                <div class="file-meta">
+                    <div class="file-name" id="fileName">—</div>
+                    <div class="file-size" id="fileSize">—</div>
+                </div>
+                <button class="file-remove" id="fileRemove" title="Remove file">✕</button>
+            </div>
+
+            <!-- Verify button -->
+            <button class="upload-btn" id="verifyBtn" disabled>
+                <span class="spinner" id="spinner"></span>
+                <span id="btnLabel">Upload & Verify</span>
+            </button>
+
+            <!-- Error message -->
+            <div class="error-msg" id="errorMsg"></div>
+
+            <!-- Results -->
+            <div class="results" id="results">
+                <div class="results-title">Verification Results</div>
+                <div id="resultsList"></div>
+            </div>
+
+        </div>
+
+        <div class="features">
+            <div class="feature">Syntax Check</div>
+            <div class="feature">MX Validation</div>
+            <div class="feature">SMTP Verification</div>
+        </div>
+
+    </section>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileDetails = document.getElementById('fileDetails');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileRemove = document.getElementById('fileRemove');
+        const verifyBtn = document.getElementById('verifyBtn');
+        const spinner = document.getElementById('spinner');
+        const btnLabel = document.getElementById('btnLabel');
+        const results = document.getElementById('results');
+        const resultsList = document.getElementById('resultsList');
+        const errorMsg = document.getElementById('errorMsg');
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function showFile(file) {
+            fileName.textContent = file.name;
+            fileSize.textContent = formatBytes(file.size);
+            fileDetails.classList.add('visible');
+            verifyBtn.disabled = false;
+            // Reset any previous results/errors
+            results.classList.remove('visible');
+            errorMsg.classList.remove('visible');
+            resultsList.innerHTML = '';
+        }
+
+        function clearFile() {
+            fileInput.value = '';
+            fileDetails.classList.remove('visible');
+            verifyBtn.disabled = true;
+            results.classList.remove('visible');
+            errorMsg.classList.remove('visible');
+        }
+
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (file) showFile(file);
+        });
+
+        fileRemove.addEventListener('click', () => {
+            clearFile();
+        });
+
+        function setLoading(on) {
+            verifyBtn.disabled = on;
+            verifyBtn.classList.toggle('loading', on);
+            spinner.style.display = on ? 'block' : 'none';
+            btnLabel.textContent = on ? 'Verifying…' : 'Upload & Verify';
+        }
+
+        function renderResults(data) {
+            // Expects data to be an array like:
+            // [{ email: "a@b.com", status: "valid" | "invalid" | "risky" }, ...]
+            // or an object with a results key
+            const rows = Array.isArray(data) ? data : (data.results || []);
+
+            if (!rows.length) {
+                resultsList.innerHTML = '<p style="color:#888;font-size:13px;">No results returned.</p>';
+            } else {
+                resultsList.innerHTML = rows.map(r => `
+                    <div class="result-row">
+                        <span class="result-email">${escapeHtml(r.email)}</span>
+                        <span class="result-badge badge-${r.status}">${capitalize(r.status)}</span>
+                    </div>
+                `).join('');
+            }
+
+            results.classList.add('visible');
+        }
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorMsg.classList.add('visible');
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function capitalize(s) {
+            return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+        }
+
+        verifyBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            setLoading(true);
+            errorMsg.classList.remove('visible');
+            results.classList.remove('visible');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/verify', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderResults(data);
+
+            } catch (err) {
+                showError('Verification failed: ' + err.message);
+            } finally {
+                setLoading(false);
+            }
+        });
+    </script>
+
+</body>
+
+</html>

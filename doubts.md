@@ -1,0 +1,2 @@
+- what is the difference between http.ListenAndServe and http.Server and all other functions.
+- why the method which is http.methodget does not need the type specifier in the func paramerts calls
