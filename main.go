@@ -92,8 +92,8 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		req.Records = append(req.Records, EmailRecord{
-			Email: row[0],
-			Name:  row[1],
+			Email: row[1],
+			Name:  row[0],
 		})
 
 		records = records[1:]
@@ -154,6 +154,7 @@ func processRecords(
 }
 
 func validateFormat(record EmailRecord) error {
+	fmt.Println("running the parse for", record.Email)
 	addr, err := mail.ParseAddress(record.Email)
 	if err != nil {
 		return fmt.Errorf("invalid email format for %w", err)
