@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
+	_ "embed"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/mail"
 	"runtime"
@@ -12,15 +15,38 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type APIError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+var roleBasedPrefixes = map[string]struct{}{
+	"info":    {},
+	"support": {},
+	"admin":   {},
+	"sales":   {},
+	"contact": {},
 }
 
 func writeJSONError(w http.ResponseWriter, code int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(APIError{Code: code, Message: message})
+}
+
+func route(mux *http.ServeMux, method string, pattern string, h http.HandlerFunc) {
+	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != method {
+			writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		h(w, r)
+	})
+}
+
+func emailParts(email string) (local, domain string) {
+	parts := strings.SplitN(email, "@", 2)
+	return strings.ToLower(parts[0]), strings.ToLower(parts[1])
+}
+
+type APIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 type EmailRecord struct {
@@ -41,14 +67,23 @@ type ValidationResult struct {
 
 type ValidatorFunc func(record EmailRecord) error
 
-func route(mux *http.ServeMux, method string, pattern string, h http.HandlerFunc) {
-	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != method {
-			writeJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
-			return
+var req VerifyRequest
+
+//go:embed disposable_domains.txt
+var disposableDomainsRaw string
+
+var disposableDomains map[string]struct{}
+
+func init() {
+	disposableDomains = make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(disposableDomainsRaw))
+	for scanner.Scan() {
+		line := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if line == "" || strings.HasPrefix(scanner.Text(), "#") {
+			continue
 		}
-		h(w, r)
-	})
+		disposableDomains[line] = struct{}{}
+	}
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +118,6 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req VerifyRequest
-
 	for _, row := range records {
 		if len(row) < 2 {
 			writeJSONError(w, http.StatusBadRequest, "bad row found")
@@ -102,6 +135,8 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 	validators := []ValidatorFunc{
 		validateFormat,
 		validateDisposable,
+		validateRolesEmails,
+		validateMX,
 	}
 
 	numWorkers := min(len(req.Records), runtime.NumCPU())
@@ -186,6 +221,37 @@ func validateFormat(record EmailRecord) error {
 }
 
 func validateDisposable(record EmailRecord) error {
+	_, domain := emailParts(record.Email)
+	if _, found := disposableDomains[domain]; found {
+		return fmt.Errorf("disposable email domain: %s", domain)
+	}
+	return nil
+}
+
+func validateRolesEmails(record EmailRecord) error {
+	local, _ := emailParts(record.Email)
+	if _, found := roleBasedPrefixes[local]; found {
+		return fmt.Errorf("role_based")
+	}
+	return nil
+}
+
+func validateMX(record EmailRecord) error {
+	_, domain := emailParts(record.Email)
+	mxs, err := net.LookupMX(domain)
+	if err != nil {
+		return fmt.Errorf("no mail servers found for domain: %s", domain)
+	}
+
+	if len(mxs) == 0 {
+		return fmt.Errorf("no mail servers found for domain: %s", domain)
+	}
+
+	// null MX record (RFC 7505) — domain explicitly accepts no email
+	if len(mxs) == 1 && (mxs[0].Host == "." || mxs[0].Host == "") {
+		return fmt.Errorf("domain does not accept email: %s", domain)
+	}
+
 	return nil
 }
 
@@ -197,7 +263,6 @@ func runValidators(record EmailRecord, validators []ValidatorFunc) ValidationRes
 
 	for _, validator := range validators {
 		if err := validator(record); err != nil {
-			fmt.Println(err)
 			result.Errors = append(result.Errors, err.Error())
 			result.IsValid = false
 		}
