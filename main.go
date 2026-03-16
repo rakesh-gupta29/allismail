@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/mail"
+	"runtime"
+	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type APIError struct {
@@ -22,10 +27,19 @@ type EmailRecord struct {
 	Email string
 	Name  string
 }
+
 type VerifyRequest struct {
 	id      string
-	records []EmailRecord
+	Records []EmailRecord
 }
+
+type ValidationResult struct {
+	Record  EmailRecord
+	Errors  []string
+	IsValid bool
+}
+
+type ValidatorFunc func(record EmailRecord) error
 
 func route(mux *http.ServeMux, method string, pattern string, h http.HandlerFunc) {
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +90,8 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, "bad row found")
 			return
 		}
-		req.records = append(req.records, EmailRecord{
+
+		req.Records = append(req.Records, EmailRecord{
 			Email: row[0],
 			Name:  row[1],
 		})
@@ -84,10 +99,109 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		records = records[1:]
 	}
 
-	fmt.Println(req)
+	validators := []ValidatorFunc{
+		validateFormat,
+		validateDisposable,
+	}
+
+	numWorkers := min(len(req.Records), runtime.NumCPU())
+	results := processRecords(req.Records, validators, numWorkers)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(w).Encode(results)
+}
+
+func processRecords(
+	records []EmailRecord,
+	validators []ValidatorFunc,
+	numWorkers int,
+) []ValidationResult {
+	jobs := make(chan EmailRecord, len(records))
+	results := make(chan ValidationResult, len(records))
+
+	// worker pool
+	var eg errgroup.Group
+
+	for range numWorkers {
+		eg.Go(func() error {
+			for record := range jobs {
+				result := runValidators(record, validators)
+				results <- result
+			}
+			return nil
+		})
+	}
+
+	// feeding the jobs
+	for _, record := range records {
+		jobs <- record
+	}
+
+	close(jobs)
+
+	// close the results channel when all the tasks are done.
+	go func() {
+		eg.Wait()
+		close(results)
+	}()
+
+	var output []ValidationResult
+	for result := range results {
+		output = append(output, result)
+	}
+
+	return output
+}
+
+func validateFormat(record EmailRecord) error {
+	addr, err := mail.ParseAddress(record.Email)
+	if err != nil {
+		return fmt.Errorf("invalid email format for %w", err)
+	}
+
+	// mail.ParseAddress accepts "John Doe <john@example.com>" — we only want
+	// the bare address form, so reject anything with a display name
+	if addr.Name != "" {
+		return fmt.Errorf("invalid email format: display names are not allowed")
+	}
+	parts := strings.SplitN(addr.Address, "@", 2)
+
+	local, domain := parts[0], parts[1]
+
+	if len(local) > 64 {
+		return fmt.Errorf("invalid length of the email")
+	}
+
+	if len(addr.Address) > 254 {
+		return fmt.Errorf("invalid email format: address exceeds 254 characters")
+	}
+
+	dotIdx := strings.LastIndex(domain, ".")
+	if dotIdx == -1 || dotIdx == len(domain)-1 {
+		return fmt.Errorf("invalid email format: domain missing or has no TLD")
+	}
+
+	return nil
+}
+
+func validateDisposable(record EmailRecord) error {
+	return nil
+}
+
+func runValidators(record EmailRecord, validators []ValidatorFunc) ValidationResult {
+	var result ValidationResult
+
+	result.IsValid = true
+	result.Record = record
+
+	for _, validator := range validators {
+		if err := validator(record); err != nil {
+			fmt.Println(err)
+			result.Errors = append(result.Errors, err.Error())
+			result.IsValid = false
+		}
+	}
+	return result
 }
 
 func main() {
