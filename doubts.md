@@ -1,4 +1,3 @@
-- what is the difference between http.ListenAndServe and http.Server and all other functions.
 - how do I automatically update the list of blocked email domains from the repo
 - does the eq.go alsways has to take the same function signautre.
 - why the method which is http.methodget does not need the type specifier in the func paramerts calls
