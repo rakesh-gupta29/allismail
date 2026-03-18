@@ -65,7 +65,12 @@ type ValidationResult struct {
 	IsValid bool
 }
 
-type ValidatorFunc func(record EmailRecord) error
+type ValidationContext struct {
+	Record EmailRecord
+	MXHost string
+}
+
+type ValidatorFunc func(record *ValidationContext) error
 
 var req VerifyRequest
 
@@ -188,9 +193,8 @@ func processRecords(
 	return output
 }
 
-func validateFormat(record EmailRecord) error {
-	fmt.Println("running the parse for", record.Email)
-	addr, err := mail.ParseAddress(record.Email)
+func validateFormat(ctx *ValidationContext) error {
+	addr, err := mail.ParseAddress(ctx.Record.Email)
 	if err != nil {
 		return fmt.Errorf("invalid email format for %w", err)
 	}
@@ -220,24 +224,24 @@ func validateFormat(record EmailRecord) error {
 	return nil
 }
 
-func validateDisposable(record EmailRecord) error {
-	_, domain := emailParts(record.Email)
+func validateDisposable(ctx *ValidationContext) error {
+	_, domain := emailParts(ctx.Record.Email)
 	if _, found := disposableDomains[domain]; found {
 		return fmt.Errorf("disposable email domain: %s", domain)
 	}
 	return nil
 }
 
-func validateRolesEmails(record EmailRecord) error {
-	local, _ := emailParts(record.Email)
+func validateRolesEmails(ctx *ValidationContext) error {
+	local, _ := emailParts(ctx.Record.Email)
 	if _, found := roleBasedPrefixes[local]; found {
 		return fmt.Errorf("role_based")
 	}
 	return nil
 }
 
-func validateMX(record EmailRecord) error {
-	_, domain := emailParts(record.Email)
+func validateMX(ctx *ValidationContext) error {
+	_, domain := emailParts(ctx.Record.Email)
 	mxs, err := net.LookupMX(domain)
 	if err != nil {
 		return fmt.Errorf("no mail servers found for domain: %s", domain)
@@ -252,6 +256,9 @@ func validateMX(record EmailRecord) error {
 		return fmt.Errorf("domain does not accept email: %s", domain)
 	}
 
+	// host ends with a '.' so we have to trim that.
+	ctx.MXHost = strings.TrimSuffix(mxs[0].Host, ".")
+
 	return nil
 }
 
@@ -261,8 +268,12 @@ func runValidators(record EmailRecord, validators []ValidatorFunc) ValidationRes
 	result.IsValid = true
 	result.Record = record
 
+	ctx := &ValidationContext{
+		Record: record,
+	}
+
 	for _, validator := range validators {
-		if err := validator(record); err != nil {
+		if err := validator(ctx); err != nil {
 			result.Errors = append(result.Errors, err.Error())
 			result.IsValid = false
 		}
