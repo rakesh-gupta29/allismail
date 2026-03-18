@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"net/smtp"
 	"runtime"
 	"strings"
 
@@ -66,8 +67,9 @@ type ValidationResult struct {
 }
 
 type ValidationContext struct {
-	Record EmailRecord
-	MXHost string
+	Record     EmailRecord
+	MXHost     string
+	IsCatchAll bool
 }
 
 type ValidatorFunc func(record *ValidationContext) error
@@ -142,6 +144,8 @@ func verifyHandler(w http.ResponseWriter, r *http.Request) {
 		validateDisposable,
 		validateRolesEmails,
 		validateMX,
+		validateCatchAll,
+		validateSMTP,
 	}
 
 	numWorkers := min(len(req.Records), runtime.NumCPU())
@@ -260,6 +264,69 @@ func validateMX(ctx *ValidationContext) error {
 	ctx.MXHost = strings.TrimSuffix(mxs[0].Host, ".")
 
 	return nil
+}
+
+func validateCatchAll(ctx *ValidationContext) error {
+	// check if the validateMX failed and at this step,
+	// there is no point in getting ahead
+	if ctx.MXHost == "" {
+		return nil
+	}
+
+	_, domain := emailParts(ctx.Record.Email)
+	fakeAddr := "doesnotexist123456789@" + domain
+	code := smtpProbe(ctx.MXHost, fakeAddr)
+	if code == 250 {
+		ctx.IsCatchAll = true
+		return fmt.Errorf("domain_accepts_all")
+	}
+
+	return nil
+}
+
+func validateSMTP(ctx *ValidationContext) error {
+	if ctx.MXHost == "" {
+		return nil
+	}
+	if ctx.IsCatchAll {
+		return nil
+	}
+	code := smtpProbe(ctx.MXHost, ctx.Record.Email)
+	switch code {
+	case 250:
+		return nil
+	case 550:
+		return fmt.Errorf("smtp_reject")
+	default:
+		return fmt.Errorf("smtp_timeout")
+	}
+}
+
+func smtpProbe(mxHost, toAddr string) int {
+	conn, err := smtp.Dial(mxHost + ":25")
+	if err != nil {
+		return 0
+	}
+	defer conn.Close()
+
+	if err := conn.Hello("allismail.com"); err != nil {
+		return 0
+	}
+	if err := conn.Mail("verify@allismail.com"); err != nil {
+		return 0
+	}
+	if err := conn.Rcpt(toAddr); err != nil {
+		if strings.HasPrefix(err.Error(), "550") {
+			return 550
+		}
+		return 0
+	}
+
+	// reset is the standard practice as per convention; not mandatory though
+	// we could have just closed the connection and be done with that.
+	conn.Reset()
+
+	return 250
 }
 
 func runValidators(record EmailRecord, validators []ValidatorFunc) ValidationResult {
