@@ -12,8 +12,11 @@ import (
 	"net/smtp"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 )
 
 var roleBasedPrefixes = map[string]struct{}{
@@ -72,9 +75,35 @@ type ValidationContext struct {
 	IsCatchAll bool
 }
 
+type ipLimiter struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
 type ValidatorFunc func(record *ValidationContext) error
 
 var req VerifyRequest
+
+var (
+	limiters   = make(map[string]*ipLimiter)
+	limitersMu sync.Mutex
+)
+
+func getLimiter(ip string) *rate.Limiter {
+	limitersMu.Lock()
+
+	defer limitersMu.Unlock()
+	entry, exists := limiters[ip]
+	if !exists {
+		entry = &ipLimiter{
+			limiter: rate.NewLimiter(rate.Limit(10), 20),
+		}
+		limiters[ip] = entry
+	}
+	entry.lastSeen = time.Now()
+	return entry.limiter
+
+}
 
 //go:embed disposable_domains.txt
 var disposableDomainsRaw string
@@ -91,6 +120,39 @@ func init() {
 		}
 		disposableDomains[line] = struct{}{}
 	}
+}
+
+func init() {
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			limitersMu.Lock()
+			for ip, entry := range limiters {
+				if time.Since(entry.lastSeen) > 5*time.Minute {
+					delete(limiters, ip)
+				}
+			}
+			limitersMu.Unlock()
+		}
+	}()
+}
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip the port so "1.2.3.4:5678" and "1.2.3.4:9999" share a bucket.
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			// why this line
+			ip = r.RemoteAddr
+			writeJSONError(w, http.StatusBadRequest, "Invalid remote address")
+			return
+		}
+		if !getLimiter(ip).Allow() {
+			writeJSONError(w, http.StatusTooManyRequests, "Too many requests")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +416,7 @@ func main() {
 	route(mux, http.MethodGet, "/", homeHandler)
 	route(mux, http.MethodPost, "/verify", verifyHandler)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	base := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, pattern := mux.Handler(r)
 		if pattern == "" {
 			writeJSONError(w, http.StatusNotFound, "Resource not found")
@@ -362,6 +424,8 @@ func main() {
 		}
 		mux.ServeHTTP(w, r)
 	})
+
+	handler := rateLimitMiddleware(base)
 
 	server := &http.Server{
 		Addr:    ":4000",
