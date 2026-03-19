@@ -206,20 +206,6 @@ The UI (`index.html`) is a single self-contained HTML file served by the Go serv
 - Export CSV button — downloads `Name, Email, IsValid` (Errors field excluded)
 - Toast notifications on copy/export actions
 
-## Keeping the disposable list fresh
-
-The disposable domains list changes as new providers appear. Options:
-
-**Manual** — run the curl command above before each release and rebuild.
-
-**Automated** — add a GitHub Actions workflow that runs weekly:
-```yaml
-- name: Update disposable domains
-  run: |
-    curl -o disposable_domains.txt \
-      https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/master/disposable_email_blocklist.conf
-```
-
 Since the list is embedded at compile time, a new file only takes effect after a rebuild and redeploy.
 
 ## Limitations
@@ -228,11 +214,3 @@ Since the list is embedded at compile time, a new file only takes effect after a
 - **Port 25 blocking** on cloud providers prevents SMTP validation. Format + disposable + MX still work.
 - **SMTP is slow** — each connection takes 1–5 seconds. For large lists, the worker pool helps but total processing time scales with list size.
 - **Greylisting** — some servers temporarily reject unknown senders with `4xx` codes. These appear as `smtp_timeout`. A retry with backoff would improve accuracy but is not currently implemented.
-
-## Dependencies
-
-```
-golang.org/x/sync  — errgroup for the worker pool
-```
-
-Standard library only beyond that — `net`, `net/smtp`, `net/mail`, `encoding/csv`, `embed`.
